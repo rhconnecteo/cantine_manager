@@ -1,4 +1,4 @@
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxD66znAFJRukZloI15T7nxjf3OetC6yBYE41qtXKzlu8943cw9tbH7wCYmtdg4SGGy/exec';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwf9MmWDLHzskc6FqVXJ5sGkcgb18Cc8eGaqa6-Z2OYO-1NMtqzW5PZCmGMJFHIVG55/exec';
 const DAY_OPTIONS = [
 	{ key: 'lundi', label: 'Lundi' },
 	{ key: 'mardi', label: 'Mardi' },
@@ -36,10 +36,14 @@ const state = {
 	days: DAY_OPTIONS,
 	lastResults: [],
 	selectedRajoutDays: [],
+	selectedCollaboratorDays: [],
 	currentSearchMatricule: '',
+	formulaireSearchMatricule: '',
 	searchPeriodMode: 'all',
 	overviewHtml: '',
 	heroSlideshow: null,
+	simpleRajoutCount: 0,
+	newCollaboratorCount: 0,
 	sidebarCollapsed: false,
 };
 
@@ -49,10 +53,21 @@ document.addEventListener('DOMContentLoaded', () => {
 	elements.totalRows = document.getElementById('totalRows');
 	elements.noPlanningCount = document.getElementById('noPlanningCount');
 	elements.noChoiceCount = document.getElementById('noChoiceCount');
+	elements.simpleRajoutCount = document.getElementById('simpleRajoutCount');
+	elements.newCollaboratorCount = document.getElementById('newCollaboratorCount');
 	elements.searchForm = document.getElementById('searchForm');
 	elements.matriculeInput = document.getElementById('matriculeInput');
+	elements.formulaireSearchForm = document.getElementById('formulaireSearchForm');
+	elements.formulaireMatriculeInput = document.getElementById('formulaireMatriculeInput');
+	elements.collaboratorForm = document.getElementById('collaboratorForm');
+	elements.collaboratorMatriculeInput = document.getElementById('collaboratorMatriculeInput');
+	elements.collaboratorNameInput = document.getElementById('collaboratorNameInput');
+	elements.collaboratorDayButtons = document.getElementById('collaboratorDayButtons');
+	elements.collaboratorDays = document.getElementById('collaboratorDays');
+	elements.collaboratorStatus = document.getElementById('collaboratorStatus');
 	elements.searchPeriodMode = document.getElementById('searchPeriodMode');
 	elements.resetButton = document.getElementById('resetButton');
+	elements.formulaireResetButton = document.getElementById('formulaireResetButton');
 	elements.rajoutForm = document.getElementById('rajoutForm');
 	elements.rajoutMatriculeDisplay = document.getElementById('rajoutMatriculeDisplay');
 	elements.rajoutDate = document.getElementById('rajoutDate');
@@ -62,7 +77,10 @@ document.addEventListener('DOMContentLoaded', () => {
 	elements.rajoutSubmitButton = elements.rajoutForm ? elements.rajoutForm.querySelector('button[type="submit"]') : null;
 	elements.resultsHint = document.getElementById('resultsHint');
 	elements.searchResults = document.getElementById('searchResults');
+	elements.formulaireResults = document.getElementById('formulaireResults');
+	elements.searchRajoutZone = document.getElementById('searchRajoutZone');
 	elements.rajoutHeroZone = document.getElementById('rajoutHeroZone');
+	elements.navFormulaireButton = document.getElementById('navFormulaireButton');
 	elements.navRechercheButton = document.getElementById('navRechercheButton');
 	elements.navRajoutButton = document.getElementById('navRajoutButton');
 	elements.sidebarToggleButton = document.getElementById('sidebarToggleButton');
@@ -71,6 +89,9 @@ document.addEventListener('DOMContentLoaded', () => {
 	elements.rajoutList = document.getElementById('rajoutList');
 
 	state.sidebarCollapsed = readSidebarCollapsedState();
+	if (isMobileViewport()) {
+		state.sidebarCollapsed = false;
+	}
 	applySidebarCollapsedState(state.sidebarCollapsed);
 
 		// Page-aware initialisation: only run features present on the current page
@@ -81,10 +102,16 @@ document.addEventListener('DOMContentLoaded', () => {
 			renderRajoutDayOptions();
 			setDefaultRajoutJour();
 		}
+		if (elements.collaboratorDayButtons) {
+			renderCollaboratorDayOptions();
+			setDefaultCollaboratorDays();
+		}
 		bindEvents();
 		adjustSidebarRajoutVisibility();
 		showSection('page-recherche');
 		setActiveNav(elements.navRechercheButton);
+		// ensure the rajout form is positioned into the search sidebar by default
+		positionRajoutForm('page-recherche');
 		initializeHeroSlideshow();
 		loadData();
 });
@@ -103,11 +130,17 @@ function adjustRajoutSectionVisibility(pageId) {
 }
 
 function ensureSidebarRajoutContainer() {
-	return null;
+	if (!elements.searchRajoutZone) return null;
+	return elements.searchRajoutZone;
 }
 
 function positionRajoutForm(pageId) {
-	return;
+	if (!elements.rajoutForm) return;
+	const isRajoutPage = pageId === 'page-recherche';
+	const sidebarContainer = ensureSidebarRajoutContainer();
+	if (sidebarContainer) {
+		sidebarContainer.style.display = isRajoutPage ? '' : 'none';
+	}
 }
 
 function setRajoutSubmittingState(isSubmitting) {
@@ -130,7 +163,7 @@ function resetRajoutFormState() {
 	setRajoutMatricule('');
 	state.currentSearchMatricule = '';
 	if (elements.rajoutStatus) {
-		elements.rajoutStatus.textContent = 'Rajout vide.';
+		elements.rajoutStatus.textContent = 'Formulaire vide.';
 	}
 	setRajoutSubmittingState(false);
 }
@@ -140,18 +173,36 @@ function bindEvents() {
 		elements.searchForm.addEventListener('submit', onSearch);
 	}
 
+	if (elements.formulaireSearchForm) {
+		elements.formulaireSearchForm.addEventListener('submit', onFormulaireSearch);
+	}
+
+	if (elements.collaboratorForm) {
+		elements.collaboratorForm.addEventListener('submit', onCollaboratorSubmit);
+	}
+
 	if (elements.resetButton) {
 		elements.resetButton.addEventListener('click', resetSearch);
+	}
+
+	if (elements.formulaireResetButton) {
+		elements.formulaireResetButton.addEventListener('click', resetFormulaireSearch);
 	}
 
 	if (elements.searchResults) {
 		elements.searchResults.addEventListener('click', onSearchResultsClick);
 	}
 
+	if (elements.formulaireResults) {
+		elements.formulaireResults.addEventListener('change', onFormulaireMealToggle);
+		elements.formulaireResults.addEventListener('click', onFormulaireMealClick);
+	}
+
 	if (elements.rajoutForm) {
 		elements.rajoutForm.addEventListener('submit', onRajoutSubmit);
 	}
 
+	bindNavButton(elements.navFormulaireButton, 'page-formulaire');
 	bindNavButton(elements.navRechercheButton, 'page-recherche');
 	bindNavButton(elements.navRajoutButton, 'page-rajout');
 
@@ -218,11 +269,18 @@ function applySidebarCollapsedState(isCollapsed) {
 }
 
 function toggleSidebarCollapsed() {
+	if (isMobileViewport()) {
+		return;
+	}
 	applySidebarCollapsedState(!state.sidebarCollapsed);
 }
 
+function isMobileViewport() {
+	return window.matchMedia && window.matchMedia('(max-width: 720px)').matches;
+}
+
 function showSection(pageId) {
-	const pages = ['page-recherche', 'page-rajout'];
+	const pages = ['page-formulaire', 'page-recherche', 'page-rajout'];
 	pages.forEach((id) => {
 		const el = document.getElementById(id);
 		if (!el) return;
@@ -234,12 +292,14 @@ function showSection(pageId) {
 	if (pageId === 'page-rajout') {
 		document.body.classList.add('page-rajout-active');
 		adjustRajoutSectionVisibility('page-rajout');
+		positionRajoutForm('page-rajout');
 		setHeroSlideshowPlaying(false);
 		renderRajoutList();
 		adjustSidebarRajoutVisibility('page-rajout');
 	} else if (pageId === 'page-recherche') {
 		document.body.classList.remove('page-rajout-active');
 		adjustRajoutSectionVisibility('page-recherche');
+		positionRajoutForm('page-recherche');
 		adjustSidebarRajoutVisibility('page-recherche');
 		setHeroSlideshowPlaying(true);
 		if (state.currentSearchMatricule) {
@@ -247,6 +307,13 @@ function showSection(pageId) {
 		} else {
 			showIdleState();
 		}
+	} else {
+		document.body.classList.remove('page-rajout-active');
+		adjustRajoutSectionVisibility('page-formulaire');
+		positionRajoutForm('page-formulaire');
+		adjustSidebarRajoutVisibility('page-formulaire');
+		setHeroSlideshowPlaying(true);
+		renderCurrentFormulaireSearch();
 	}
 
 	// scroll to top of main card
@@ -292,6 +359,10 @@ function setDayCheckedOptimistic(matricule, dayKey, checked) {
 	return targetRow;
 }
 
+function isCollaboratorAdded(row) {
+	return Boolean(row?.isAddedCollaborator) || normalizeText(row?.source) === 'ajout_form';
+}
+
 function isMissingPlaceholder(value, placeholders) {
 	const normalized = normalizeText(value);
 	return !normalized || placeholders.includes(normalized);
@@ -306,6 +377,61 @@ function isHourPlanningValue(value) {
 		|| /^\d{1,2}h\d{2}$/.test(normalized)
 		|| /^\d{1,2}h\d{2}:\d{2}$/.test(normalized)
 		|| /^\d{1,2}[:h]\d{2}\s*-\s*\d{1,2}[:h]\d{2}$/.test(normalized);
+}
+
+function getCollaboratorImageSrc(row) {
+	const rawValue = String(row?.imageBase64 || '').trim();
+	if (!rawValue) return '';
+	if (rawValue.startsWith('data:')) return rawValue;
+	return `data:image/png;base64,${rawValue}`;
+}
+
+function getFormulaireDisplayState(row, dayData, dayKey) {
+	const planningValue = String(dayData?.planning || '').trim();
+	const hasPlanning = !isMissingPlaceholder(planningValue, ['pas de planning', 'aucun planning', 'planning']);
+	const isPlanningHour = isHourPlanningValue(planningValue);
+	const hasChoice = !isMissingPlaceholder(dayData?.choice, ['pas de choix', 'aucun choix', 'choix']);
+	const isAdded = isCollaboratorAdded(row);
+	const isRajoutDay = Boolean(String(dayData?.rajout || '').trim()) || Boolean(row && row.rajouts && row.rajouts[String(dayKey || '')]);
+	const isRajout = isAdded || isRajoutDay;
+
+	if (isRajout) {
+		return {
+			className: 'is-green',
+			badgeClass: 'is-rajout-added',
+			label: '',
+			note: 'Rajouté',
+			showAction: true,
+		};
+	}
+
+	if (!hasChoice) {
+		return {
+			className: 'is-red',
+			badgeClass: 'is-red',
+			label: '',
+			note: 'Choix manquant',
+			showAction: false,
+		};
+	}
+
+	if (!isPlanningHour) {
+		return {
+			className: 'is-orange',
+			badgeClass: 'is-orange',
+			label: '',
+			note: hasPlanning ? 'Le planning n\'est pas au format heure.' : 'Planning manquant.',
+			showAction: false,
+		};
+	}
+
+	return {
+		className: 'is-green',
+		badgeClass: 'is-green',
+		label: '',
+		note: '',
+		showAction: true,
+	};
 }
 
 function runCurrentSearch() {
@@ -340,6 +466,190 @@ function runCurrentSearch() {
 	scrollToSection('topSection');
 }
 
+function onFormulaireSearch(event) {
+	event.preventDefault();
+	const searchValue = String(elements.formulaireMatriculeInput && elements.formulaireMatriculeInput.value || '').trim();
+	state.formulaireSearchMatricule = normalizeText(searchValue);
+	if (!state.formulaireSearchMatricule) {
+		showFormulaireIdleState();
+		return;
+	}
+	renderCurrentFormulaireSearch();
+	scrollToSection('topSection');
+}
+
+function onFormulaireMealToggle(event) {
+	const input = event.target && event.target.closest ? event.target.closest('input[data-meal-action="take"]') : null;
+	if (!input) return;
+
+	const matricule = String(input.getAttribute('data-meal-matricule') || '').trim();
+	const dayKey = String(input.getAttribute('data-meal-day') || '').trim();
+	if (!matricule || !dayKey) return;
+	if (!input.checked) return;
+
+	input.disabled = true;
+	const resultBlock = input.closest('.formulaire-result');
+	const note = resultBlock ? resultBlock.querySelector('.formulaire-result-note') : null;
+	if (note) note.textContent = 'Enregistrement...';
+
+	const params = new URLSearchParams({
+		action: 'markMealTaken',
+		matricule,
+		day: dayKey,
+	});
+
+	loadJsonp(`${WEB_APP_URL}?${params.toString()}`, 15000)
+		.then((payload) => {
+			if (!payload || payload.success === false) {
+				throw new Error((payload && payload.message) || 'Erreur lors de la prise du repas.');
+			}
+
+			if (note) {
+				note.textContent = payload.alreadyTaken ? 'Ce repas est deja pris.' : 'Repas marque comme pris.';
+			}
+			return loadData();
+		})
+		.then(() => {
+			renderCurrentFormulaireSearch();
+		})
+		.catch((error) => {
+			if (note) {
+				note.textContent = error && error.message ? error.message : 'Impossible de marquer le repas.';
+			}
+			input.disabled = false;
+			input.checked = false;
+			renderCurrentFormulaireSearch();
+		});
+}
+
+function onFormulaireMealClick(event) {
+	const button = event.target && event.target.closest ? event.target.closest('button[data-meal-action="take"]') : null;
+	if (!button) return;
+
+	const matricule = String(button.getAttribute('data-meal-matricule') || '').trim();
+	const dayKey = String(button.getAttribute('data-meal-day') || '').trim();
+	if (!matricule || !dayKey) return;
+
+	button.disabled = true;
+	button.textContent = 'Enregistrement...';
+
+	const resultBlock = button.closest('.formulaire-result');
+	const note = resultBlock ? resultBlock.querySelector('.formulaire-result-footnote') : null;
+	if (note) note.textContent = 'Enregistrement du repas...';
+
+	const params = new URLSearchParams({
+		action: 'markMealTaken',
+		matricule,
+		day: dayKey,
+	});
+
+	const optimisticRow = setDayCheckedOptimistic(matricule, dayKey, true);
+	if (optimisticRow) {
+		renderCurrentFormulaireSearch();
+	}
+
+	loadJsonp(`${WEB_APP_URL}?${params.toString()}`, 12000)
+		.then((payload) => {
+			if (!payload || payload.success === false) {
+				throw new Error((payload && payload.message) || 'Erreur lors de la prise du repas.');
+			}
+
+			if (note) {
+				note.textContent = payload.alreadyTaken ? 'Ce repas est déjà pris.' : 'Repas enregistré.';
+			}
+
+			if (resultBlock) {
+				resultBlock.classList.add('is-checked');
+				resultBlock.classList.remove('is-alert');
+				resultBlock.classList.remove('is-red');
+			}
+
+			button.textContent = 'Repas pris';
+			button.disabled = true;
+
+			setTimeout(() => {
+				loadData().catch((error) => {
+					console.warn('Rafraichissement apres prise du repas echoue:', error);
+				});
+			}, 0);
+		})
+		.catch((error) => {
+			setDayCheckedOptimistic(matricule, dayKey, false);
+			if (note) {
+				note.textContent = error && error.message ? error.message : 'Impossible d’enregistrer le repas.';
+			}
+			button.disabled = false;
+			button.textContent = 'Marquer repas pris';
+			if (resultBlock) {
+				resultBlock.classList.remove('is-checked');
+			}
+		});
+}
+
+function onCollaboratorSubmit(event) {
+	event.preventDefault();
+
+	const matricule = String(elements.collaboratorMatriculeInput && elements.collaboratorMatriculeInput.value || '').trim();
+	const nomPrenom = String(elements.collaboratorNameInput && elements.collaboratorNameInput.value || '').trim();
+	const jours = Array.isArray(state.selectedCollaboratorDays) ? state.selectedCollaboratorDays.filter(Boolean) : [];
+
+	if (!matricule || !nomPrenom) {
+		if (elements.collaboratorStatus) {
+			elements.collaboratorStatus.textContent = 'Le matricule et le nom sont obligatoires.';
+		}
+		return;
+	}
+
+	if (!jours.length) {
+		if (elements.collaboratorStatus) {
+			elements.collaboratorStatus.textContent = 'Sélectionnez au moins un jour de repas.';
+		}
+		return;
+	}
+
+	if (elements.collaboratorStatus) {
+		elements.collaboratorStatus.textContent = 'Enregistrement...';
+	}
+
+	const params = new URLSearchParams({
+		action: 'addCollaborator',
+		matricule,
+		nomPrenom,
+		jours: jours.join(','),
+	});
+
+	loadJsonp(`${WEB_APP_URL}?${params.toString()}`, 15000)
+		.then((payload) => {
+			if (!payload || payload.success === false) {
+				throw new Error((payload && payload.message) || 'Erreur lors de l\'ajout du collaborateur.');
+			}
+
+			if (elements.collaboratorStatus) {
+				elements.collaboratorStatus.textContent = payload.message || 'Collaborateur ajouté.';
+			}
+
+			if (elements.collaboratorForm) {
+				elements.collaboratorForm.reset();
+			}
+			setDefaultCollaboratorDays();
+
+			state.formulaireSearchMatricule = normalizeText(matricule);
+			if (elements.formulaireMatriculeInput) {
+				elements.formulaireMatriculeInput.value = matricule;
+			}
+
+			return loadData();
+		})
+		.then(() => {
+			renderCurrentFormulaireSearch();
+		})
+		.catch((error) => {
+			if (elements.collaboratorStatus) {
+				elements.collaboratorStatus.textContent = error && error.message ? error.message : 'Impossible d\'ajouter le collaborateur.';
+			}
+		});
+}
+
 function onSearchResultsClick(event) {
 	const button = event.target && event.target.closest ? event.target.closest('button[data-meal-action="take"]') : null;
 	if (!button) return;
@@ -371,18 +681,26 @@ function onSearchResultsClick(event) {
 			return loadData();
 		})
 		.then(() => {
-			runCurrentSearch();
+			if (container === elements.formulaireResults) {
+				renderCurrentFormulaireSearch();
+			} else {
+				runCurrentSearch();
+			}
 		})
 		.catch((error) => {
 			if (container === elements.searchResults && elements.resultsHint) {
 				elements.resultsHint.textContent = error && error.message ? error.message : 'Impossible de marquer le repas.';
 			}
-			runCurrentSearch();
+			if (container === elements.formulaireResults) {
+				renderCurrentFormulaireSearch();
+			} else {
+				runCurrentSearch();
+			}
 		});
 }
 
 function setActiveNav(button) {
-	const buttons = [elements.navRechercheButton, elements.navRajoutButton].filter(Boolean);
+	const buttons = [elements.navFormulaireButton, elements.navRechercheButton, elements.navRajoutButton].filter(Boolean);
 	buttons.forEach((b) => {
 		if (b === button) b.classList.add('is-active');
 		else b.classList.remove('is-active');
@@ -409,16 +727,32 @@ function renderRajoutList() {
 
 	// Sort by matricule for predictability
 	rowsWithRajout.sort((a, b) => (a.matricule || '').localeCompare(b.matricule || ''));
+	const simpleRows = rowsWithRajout.filter((row) => row.isSimpleRajout && !row.isAddedCollaborator);
+	const newCollaboratorRows = rowsWithRajout.filter((row) => row.isAddedCollaborator);
 
-	elements.rajoutList.innerHTML = rowsWithRajout
+	elements.rajoutList.innerHTML = [
+		renderRajoutSectionHtml('Rajout simple', simpleRows, 'simple', abbrev),
+		renderRajoutSectionHtml('Rajout comme nouveau collaborateur', newCollaboratorRows, 'new', abbrev),
+	].filter(Boolean).join('');
+	if (elements.resultsHint) elements.resultsHint.textContent = '';
+	if (elements.searchResults) elements.searchResults.innerHTML = '';
+}
+
+function renderRajoutSectionHtml(sectionTitle, rows, sectionKey, abbrev) {
+	if (!Array.isArray(rows) || !rows.length) {
+		return '';
+	}
+
+	const days = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+	const rowsHtml = rows
 		.map((row) => {
-			const days = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
-			// build a small inline table showing X for rajout days
 			const cells = days.map((d) => (row.rajouts && row.rajouts[d] ? '<td class="rajout-x">X</td>' : '<td></td>')).join('');
+			const badgeLabel = 'Collab';
 			return `
 				<article class="result-card">
 					<div class="rajout-card-row" style="display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:flex-start;gap:6px;width:100%;min-width:0;">
-						<div class="rajout-card-info" style="display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-width:150px;max-width:170px;flex:0 0 160px;">
+						<div class="rajout-card-info" style="display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-width:0;max-width:120px;flex:0 0 120px;">
+							<div class="rajout-type-badge is-collaborator-column" style="background:linear-gradient(135deg,#102a43,#1d4e89);color:#fff;border:1px solid rgba(16,42,67,0.2);box-shadow:0 8px 18px rgba(16,42,67,0.14);">${escapeHtml(badgeLabel)}</div>
 							<div class="rajout-card-name">${escapeHtml(row.nomPrenom)}</div>
 							<div class="rajout-card-meta">${escapeHtml(row.matricule)}</div>
 						</div>
@@ -440,9 +774,19 @@ function renderRajoutList() {
 				</article>
 			`;
 		})
-		.join('');
-	if (elements.resultsHint) elements.resultsHint.textContent = '';
-	if (elements.searchResults) elements.searchResults.innerHTML = '';
+			.join('');
+
+		return `
+			<section class="rajout-section-group rajout-section-group--${escapeHtml(sectionKey)}">
+				<div class="rajout-section-header">
+					<h3>${escapeHtml(sectionTitle)}</h3>
+					<span>${rows.length}</span>
+				</div>
+				<div class="results-list rajout-list-group">
+					${rowsHtml}
+				</div>
+			</section>
+		`;
 }
 
 function renderRajoutListHtml() {
@@ -451,39 +795,16 @@ function renderRajoutListHtml() {
 		return '<div class="results-list empty-state">Aucun rajout enregistre.</div>';
 	}
 
-	const abbrev = { lundi: 'Lun', mardi: 'Mar', mercredi: 'Mer', jeudi: 'Jeu', vendredi: 'Ven', samedi: 'Sam', dimanche: 'Dim' };
+		const abbrev = { lundi: 'Lun', mardi: 'Mar', mercredi: 'Mer', jeudi: 'Jeu', vendredi: 'Ven', samedi: 'Sam', dimanche: 'Dim' };
 	rowsWithRajout.sort((a, b) => (a.matricule || '').localeCompare(b.matricule || ''));
 
-	return rowsWithRajout
-		.map((row) => {
-			const days = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
-			const cells = days.map((d) => (row.rajouts && row.rajouts[d] ? '<td style="text-align:center;font-weight:800;color:var(--accent-strong)">X</td>' : '<td></td>')).join('');
-			return `
-				<article class="result-card">
-					<div class="rajout-card-row" style="display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:flex-start;gap:6px;width:100%;min-width:0;">
-						<div class="rajout-card-info" style="display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-width:150px;max-width:170px;flex:0 0 160px;">
-							<div class="rajout-card-name">${escapeHtml(row.nomPrenom)}</div>
-							<div class="rajout-card-meta">${escapeHtml(row.matricule)}</div>
-						</div>
-						<div class="rajout-card-table" style="flex:1 1 auto;min-width:0;margin-left:0;white-space:nowrap;overflow:hidden;max-width:100%;">
-								<table class="rajout-table" style="border-collapse:collapse;white-space:nowrap;width:100%;table-layout:fixed;">
-								<thead>
-									<tr>
-										${days.map((d) => `<th class="rajout-day-th">${escapeHtml(abbrev[d])}</th>`).join('')}
-									</tr>
-								</thead>
-								<tbody>
-									<tr>
-										${cells}
-									</tr>
-								</tbody>
-							</table>
-						</div>
-					</div>
-				</article>
-			`;
-		})
-		.join('');
+		const simpleRows = rowsWithRajout.filter((row) => row.isSimpleRajout && !row.isAddedCollaborator);
+		const newCollaboratorRows = rowsWithRajout.filter((row) => row.isAddedCollaborator);
+
+		return [
+			renderRajoutSectionHtml('Rajout simple', simpleRows, 'simple', abbrev),
+			renderRajoutSectionHtml('Rajout comme nouveau collaborateur', newCollaboratorRows, 'new', abbrev),
+		].filter(Boolean).join('');
 }
 
 function openRajoutMainView() {
@@ -492,6 +813,8 @@ function openRajoutMainView() {
 
 function closeRajoutMainView() {
 	// restore search panel visibility and remove rajout class
+	const formulairePanel = document.getElementById('page-formulaire');
+	if (formulairePanel) formulairePanel.style.display = '';
 	document.body.classList.remove('page-rajout-active');
 	// restore idle state
 	showIdleState();
@@ -546,6 +869,8 @@ async function loadData() {
         if (elements.totalRows) elements.totalRows.textContent = String(normalized.totalRows);
         if (elements.noPlanningCount) elements.noPlanningCount.textContent = String(normalized.noPlanningCount);
         if (elements.noChoiceCount) elements.noChoiceCount.textContent = String(normalized.noChoiceCount);
+		if (elements.simpleRajoutCount) elements.simpleRajoutCount.textContent = String(normalized.simpleRajoutCount);
+		if (elements.newCollaboratorCount) elements.newCollaboratorCount.textContent = String(normalized.newCollaboratorCount);
         
         showIdleState();
 		if (document.body.classList.contains('page-rajout-active')) {
@@ -556,6 +881,8 @@ async function loadData() {
 			} else {
 				showIdleState();
 			}
+		} else if (document.getElementById('page-formulaire')?.classList.contains('active')) {
+			renderCurrentFormulaireSearch();
         }
         setStatus('Pret');
     } catch (error) {
@@ -567,6 +894,8 @@ async function loadData() {
 			if (elements.totalRows) elements.totalRows.textContent = String(normalized.totalRows);
 			if (elements.noPlanningCount) elements.noPlanningCount.textContent = String(normalized.noPlanningCount);
 			if (elements.noChoiceCount) elements.noChoiceCount.textContent = String(normalized.noChoiceCount);
+			if (elements.simpleRajoutCount) elements.simpleRajoutCount.textContent = String(normalized.simpleRajoutCount);
+			if (elements.newCollaboratorCount) elements.newCollaboratorCount.textContent = String(normalized.newCollaboratorCount);
 
 			showIdleState();
 			if (document.body.classList.contains('page-rajout-active')) {
@@ -577,6 +906,8 @@ async function loadData() {
 				} else {
 					showIdleState();
 				}
+			} else if (document.getElementById('page-formulaire')?.classList.contains('active')) {
+				renderCurrentFormulaireSearch();
 			}
 			setStatus('Pret');
 			return;
@@ -727,6 +1058,12 @@ function onRajoutSubmit(event) {
 	loadJsonp(`${WEB_APP_URL}?${params.toString()}`, 15000)
 		.then((payload) => {
 			elements.rajoutStatus.textContent = payload && payload.updated ? 'Rajout mis à jour.' : 'Rajout ajouté.';
+			if (payload && payload.simpleRajoutCount != null && elements.simpleRajoutCount) {
+				elements.simpleRajoutCount.textContent = String(payload.simpleRajoutCount);
+			}
+			if (payload && payload.newCollaboratorCount != null && elements.newCollaboratorCount) {
+				elements.newCollaboratorCount.textContent = String(payload.newCollaboratorCount);
+			}
 
 			// Refresh data from server so the new/updated rajout is reflected in the UI
 			loadData()
@@ -770,6 +1107,19 @@ function renderRajoutDayOptions() {
 	});
 }
 
+function renderCollaboratorDayOptions() {
+	if (!elements.collaboratorDayButtons || !elements.collaboratorDays) return;
+	elements.collaboratorDayButtons.innerHTML = DAY_OPTIONS.map(
+		(day) => `<button type="button" class="rajout-day-button collaborator-day-button" data-day="${day.key}">${day.label}</button>`,
+	).join('');
+
+	elements.collaboratorDayButtons.querySelectorAll('.collaborator-day-button').forEach((button) => {
+		button.addEventListener('click', () => {
+			toggleCollaboratorDay(button.getAttribute('data-day') || '');
+		});
+	});
+}
+
 function setRajoutDays(dayKeys) {
 	if (!elements.rajoutJour) return;
 	state.selectedRajoutDays = Array.isArray(dayKeys) ? dayKeys.filter(Boolean) : [];
@@ -779,6 +1129,33 @@ function setRajoutDays(dayKeys) {
 		const isSelected = state.selectedRajoutDays.includes(button.getAttribute('data-day'));
 		button.classList.toggle('is-selected', isSelected);
 	});
+}
+
+function setCollaboratorDays(dayKeys) {
+	if (!elements.collaboratorDays) return;
+	state.selectedCollaboratorDays = Array.isArray(dayKeys) ? dayKeys.filter(Boolean) : [];
+	elements.collaboratorDays.value = state.selectedCollaboratorDays.join(',');
+	if (!elements.collaboratorDayButtons) return;
+	elements.collaboratorDayButtons.querySelectorAll('.collaborator-day-button').forEach((button) => {
+		const isSelected = state.selectedCollaboratorDays.includes(button.getAttribute('data-day'));
+		button.classList.toggle('is-selected', isSelected);
+	});
+}
+
+function toggleCollaboratorDay(dayKey) {
+	if (!dayKey) return;
+	const current = Array.isArray(state.selectedCollaboratorDays) ? [...state.selectedCollaboratorDays] : [];
+	const index = current.indexOf(dayKey);
+	if (index >= 0) {
+		current.splice(index, 1);
+	} else {
+		current.push(dayKey);
+	}
+	setCollaboratorDays(current);
+}
+
+function setDefaultCollaboratorDays() {
+	setCollaboratorDays([]);
 }
 
 function toggleRajoutDay(dayKey) {
@@ -801,6 +1178,9 @@ function normalizePayload(payload) {
 			totalRows: Number(payload.totalRows || payload.rows.length),
 			noPlanningCount: Number(payload.noPlanningCount ?? summary.noPlanningCount),
 			noChoiceCount: Number(payload.noChoiceCount ?? summary.noChoiceCount),
+			simpleRajoutCount: Number(payload.simpleRajoutCount ?? payload.rajoutCount ?? summary.simpleRajoutCount),
+			newCollaboratorCount: Number(payload.newCollaboratorCount ?? summary.newCollaboratorCount),
+			rajoutCount: Number(payload.simpleRajoutCount ?? payload.rajoutCount ?? summary.simpleRajoutCount),
 			days: Array.isArray(payload.days) && payload.days.length ? payload.days : DAY_OPTIONS,
 		};
 	}
@@ -813,6 +1193,9 @@ function normalizePayload(payload) {
 			totalRows: rows.length,
 			noPlanningCount: summary.noPlanningCount,
 			noChoiceCount: summary.noChoiceCount,
+			simpleRajoutCount: summary.simpleRajoutCount,
+			newCollaboratorCount: summary.newCollaboratorCount,
+			rajoutCount: summary.simpleRajoutCount,
 			days: DAY_OPTIONS,
 		};
 	}
@@ -855,10 +1238,14 @@ function fromRawValues(values) {
 function computeSummary(rows) {
 	let noPlanningCount = 0;
 	let noChoiceCount = 0;
+	let simpleRajoutCount = 0;
+	let newCollaboratorCount = 0;
 
 	rows.forEach((row) => {
 		const hasPlanning = DAY_OPTIONS.some((day) => String(row.days?.[day.key]?.planning || '').trim() !== '');
 		const hasChoice = DAY_OPTIONS.some((day) => String(row.days?.[day.key]?.choice || '').trim() !== '');
+		const isSimpleRajout = Boolean(row.isSimpleRajout) || normalizeText(row.simpleRajout) === 'x';
+		const isNewCollaborator = Boolean(row.isAddedCollaborator) || normalizeText(row.newCollaborator) === 'x';
 
 		if (!hasPlanning) {
 			noPlanningCount += 1;
@@ -867,9 +1254,17 @@ function computeSummary(rows) {
 		if (!hasChoice) {
 			noChoiceCount += 1;
 		}
+
+		if (isSimpleRajout) {
+			simpleRajoutCount += 1;
+		}
+
+		if (isNewCollaborator) {
+			newCollaboratorCount += 1;
+		}
 	});
 
-	return { noPlanningCount, noChoiceCount };
+	return { noPlanningCount, noChoiceCount, simpleRajoutCount, newCollaboratorCount };
 }
 
 function renderDayOptions() {
@@ -895,11 +1290,13 @@ function renderResults(rows, emptyMessage, isEmpty, mode, targetElement) {
 		.map((row) => {
 			const isCompact = window.innerWidth <= 420;
 			const abbrev = { lundi: 'Lun', mardi: 'Mar', mercredi: 'Mer', jeudi: 'Jeu', vendredi: 'Ven', samedi: 'Sam', dimanche: 'Dim' };
+			const rajoutDays = Object.keys(row.rajouts || {});
 			const dayItems = DAY_OPTIONS;
+			const rowHasRajout = isCollaboratorAdded(row) || Object.values(row.days || {}).some((day) => String(day?.rajout || '').trim());
 			const allVisibleReady = dayItems.length > 0 && dayItems.every((day) => isDayReady(row.days?.[day.key]));
 			const checkedCount = dayItems.filter((day) => isDayChecked(row.days?.[day.key])).length;
 			const stateClass = allVisibleReady ? 'is-ok' : 'is-alert';
-			const stateLabel = allVisibleReady ? 'Dossier pret' : 'Dossier incomplet';
+			const stateLabel = rowHasRajout ? 'Rajouté' : (allVisibleReady ? 'Dossier pret' : 'Dossier incomplet');
 			return `
 				<article class="result-card result-card--search ${stateClass}">
 					<div class="result-topline result-side">
@@ -919,17 +1316,20 @@ function renderResults(rows, emptyMessage, isEmpty, mode, targetElement) {
 							const dayData = row.days?.[day.key] || {};
 							const ready = isDayReady(dayData);
 							const checked = isDayChecked(dayData);
+							const dayIsRajout = Boolean(String(dayData?.rajout || '').trim()) || rajoutDays.includes(day.key);
 							return `
-								<div class="week-column ${ready ? 'is-ready' : 'is-missing'} ${checked ? 'is-checked' : ''}">
+								<div class="week-column ${dayIsRajout ? 'is-rajout' : (ready ? 'is-ready' : 'is-missing')} ${checked ? 'is-checked' : ''}">
 									<h4>${escapeHtml(isCompact ? (abbrev[day.key] || day.label) : day.label)}</h4>
 									${renderWeekdayCell('Planning', dayData.planning, 'Pas de planning')}
 									${renderWeekdayCell('Période', dayData.period, 'Jour / Nuit')}
 									${renderWeekdayCell('Choix', dayData.choice, 'Pas de choix')}
-									<div class="day-status ${(ready ? 'is-ready' : 'is-missing')} ${checked ? 'is-checked' : ''}">${checked ? 'Repas pris' : (ready ? 'Compatible' : 'Incomplet')}</div>
+									<div class="day-status ${(dayIsRajout ? 'is-rajout' : (ready ? 'is-ready' : 'is-missing'))} ${checked ? 'is-checked' : ''}">${checked ? 'Repas pris' : (dayIsRajout ? 'Rajouté' : (ready ? 'Compatible' : 'Incomplet'))}</div>
 								</div>
 							`;
 						}).join('')}
 					</div>
+
+					${rajoutDays.length ? `<div class="search-rajout-note">Rajout déjà noté : ${rajoutDays.map((dayKey) => escapeHtml(DAY_OPTIONS.find((day) => day.key === dayKey)?.label || dayKey)).join(', ')}</div>` : ''}
 				</article>
 			`;
 		})
@@ -952,10 +1352,112 @@ function renderOverview() {
 	elements.overviewResults.innerHTML = buildOverviewHtml(state.rows);
 }
 
+function renderFormulaireResults(rows, emptyMessage, isEmpty, dayKey) {
+	const container = elements.formulaireResults;
+	if (!container) return;
+	if (isEmpty) {
+		container.classList.add('empty-state');
+		container.innerHTML = emptyMessage;
+		return;
+	}
+
+	const todayKey = dayKey || getTodayDayKey();
+	const dayLabel = getDayLabel(todayKey);
+	container.classList.remove('empty-state');
+	container.innerHTML = rows
+		.map((row) => {
+			const dayData = row.days?.[todayKey] || {};
+			const displayState = getFormulaireDisplayState(row, dayData);
+			const checked = isDayChecked(dayData);
+			const showAction = displayState.showAction;
+			const imageSrc = getCollaboratorImageSrc(row);
+			const imageStyle = imageSrc ? `style="background-image:url('${escapeHtml(imageSrc)}')"` : '';
+			const planningValue = String(dayData.planning || '').trim();
+			const choiceValue = String(dayData.choice || '').trim();
+			const planningGridClass = !choiceValue || !planningValue
+				? 'is-planning-missing'
+				: (!isHourPlanningValue(planningValue) ? 'is-planning-non-hour' : 'is-planning-ok');
+			return `
+				<div class="formulaire-result ${displayState.className} ${checked ? 'is-checked' : ''}">
+					<div class="formulaire-result-glow"></div>
+					<div class="formulaire-result-layout formulaire-result-layout--avatar">
+						<div class="formulaire-result-avatar" ${imageStyle} aria-hidden="true"></div>
+
+						<div class="formulaire-result-main">
+							<div class="formulaire-result-header">
+								<div class="formulaire-result-identity">
+									<div class="formulaire-result-name">${escapeHtml(row.nomPrenom)}</div>
+								</div>
+								${displayState.badgeClass === 'is-rajout-added' ? '<div class="formulaire-result-rajout-badge">Rajouté</div>' : ''}
+							</div>
+
+							<div class="formulaire-result-grid formulaire-result-grid--compact formulaire-result-grid--planning ${planningGridClass}">
+								<div class="formulaire-result-item">
+									<span>Nom et Prénoms :</span>
+									<strong>${escapeHtml(row.nomPrenom)}</strong>
+								</div>
+								<div class="formulaire-result-item">
+									<span>Matricule :</span>
+									<strong>${escapeHtml(row.matricule)}</strong>
+								</div>
+								<div class="formulaire-result-item">
+									<span>Période :</span>
+									<strong>${escapeHtml(dayData.period || 'Jour / Nuit')}</strong>
+								</div>
+								<div class="formulaire-result-item">
+									<span>Planning :</span>
+									<strong>${escapeHtml(dayData.planning || 'Pas de planning')}</strong>
+								</div>
+								<div class="formulaire-result-item">
+									<span>Choix :</span>
+									<strong>${escapeHtml(dayData.choice || 'Pas de choix')}</strong>
+								</div>
+								<div class="formulaire-result-item formulaire-result-item--check ${showAction ? '' : 'is-hidden'}">
+									<span>Action :</span>
+									${showAction ? `
+										${checked ? '<strong>Repas déjà pris</strong>' : `<button type="button" class="formulaire-action-button day-action-button" data-meal-action="take" data-meal-day="${escapeHtml(todayKey)}" data-meal-matricule="${escapeHtml(row.matricule)}">Marquer repas pris</button>`}
+									` : '<strong class="formulaire-no-action">Aucune action disponible</strong>'}
+								</div>
+							</div>
+
+							${displayState.badgeClass === 'is-rajout-added' ? '<div class="formulaire-result-footnote is-rajout">Rajouté</div>' : ''}
+						</div>
+					</div>
+				</div>
+			`;
+		})
+		.join('');
+}
+
+function renderCurrentFormulaireSearch() {
+	const matricule = String(state.formulaireSearchMatricule || '').trim();
+	if (!matricule) {
+		showFormulaireIdleState();
+		return;
+	}
+
+	const matches = state.rows.filter((row) => normalizeText(row.matricule) === normalizeText(matricule));
+	if (!matches.length) {
+		renderFormulaireResults([], `Aucun resultat pour "${escapeHtml(matricule)}".`, true, getTodayDayKey());
+		return;
+	}
+
+	renderFormulaireResults(matches, '', false, getTodayDayKey());
+}
+
+function resetFormulaireSearch() {
+	state.formulaireSearchMatricule = '';
+	if (elements.formulaireMatriculeInput) {
+		elements.formulaireMatriculeInput.value = '';
+	}
+	showFormulaireIdleState();
+}
+
 function renderMealAction(row, dayKey, dayData, isChecked) {
+	const addedCollaborator = isCollaboratorAdded(row);
 	const hasPlanning = Boolean(dayData && String(dayData.planning || '').trim());
 	const hasChoice = Boolean(dayData && String(dayData.choice || '').trim());
-	if (!hasPlanning && !hasChoice) {
+	if (!hasPlanning && !hasChoice && !addedCollaborator) {
 		return '<div class="day-action day-action--blocked">Planning ou choix manquant</div>';
 	}
 
@@ -971,14 +1473,14 @@ function createSlideshow(containerId, slidesArray, intervalMs = 3600) {
 	if (!frame || !Array.isArray(slidesArray) || slidesArray.length === 0) return null;
 
 	frame.innerHTML = slidesArray
-		.slice(0, 1)
-		.map((slide) => `
+		.map((slide, index) => `
 			<img
-				class="hero-slide is-active"
+				class="hero-slide${index === 0 ? ' is-active' : ''}"
 				src="${escapeHtml(slide.src)}"
 				alt="${escapeHtml(slide.alt)}"
-				loading="eager"
+				loading="${index === 0 ? 'eager' : 'lazy'}"
 				decoding="async"
+				aria-hidden="${index === 0 ? 'false' : 'true'}"
 			/>
 		`)
 		.join('');
@@ -990,15 +1492,29 @@ function createSlideshow(containerId, slidesArray, intervalMs = 3600) {
 		timer: null,
 		intervalMs,
 	};
+
+	if (slideshow.slides.length > 1) {
+		slideshow.timer = window.setInterval(() => {
+			slideshow.index = (slideshow.index + 1) % slideshow.slides.length;
+			slideshow.slides.forEach((slide, slideIndex) => {
+				const isActive = slideIndex === slideshow.index;
+				slide.classList.toggle('is-active', isActive);
+				slide.setAttribute('aria-hidden', String(!isActive));
+			});
+		}, intervalMs);
+	}
+
 	return slideshow;
 }
 
 function initializeHeroSlideshow() {
-	// create static hero frames with one image each to avoid continuous animation cost
 	state.heroSlides = {};
 	state.heroSlides.left = createSlideshow('slideshow-left', HERO_SLIDES_LEFT, 3800);
 	state.heroSlides.center = createSlideshow('slideshow-center', HERO_SLIDES_RIZ, 4200);
 	state.heroSlides.right = createSlideshow('slideshow-right', HERO_SLIDES_DESSERTS, 3600);
+	state.heroSlides.rajoutLeft = createSlideshow('rajout-slideshow-left', HERO_SLIDES_LEFT, 3800);
+	state.heroSlides.rajoutCenter = createSlideshow('rajout-slideshow-center', HERO_SLIDES_RIZ, 4200);
+	state.heroSlides.rajoutRight = createSlideshow('rajout-slideshow-right', HERO_SLIDES_DESSERTS, 3600);
 }
 
 function setHeroSlideshowPlaying(shouldPlay) {
@@ -1014,6 +1530,13 @@ function resetSearch() {
 	if (elements.searchResults) {
 		elements.searchResults.classList.add('empty-state');
 		elements.searchResults.textContent = 'Lancez une recherche pour afficher les résultats du matricule.';
+	}
+}
+
+function showFormulaireIdleState() {
+	if (elements.formulaireResults) {
+		elements.formulaireResults.classList.add('empty-state');
+		elements.formulaireResults.textContent = 'Lancez une recherche dans Formulaire pour voir le jour d’aujourd’hui du matricule recherché.';
 	}
 }
 
