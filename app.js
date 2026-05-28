@@ -1296,7 +1296,7 @@ function renderResults(rows, emptyMessage, isEmpty, mode, targetElement) {
 			const allVisibleReady = dayItems.length > 0 && dayItems.every((day) => isDayReady(row.days?.[day.key]));
 			const checkedCount = dayItems.filter((day) => isDayChecked(row.days?.[day.key])).length;
 			const stateClass = allVisibleReady ? 'is-ok' : 'is-alert';
-			const stateLabel = rowHasRajout ? 'Rajouté' : (allVisibleReady ? 'Dossier pret' : 'Dossier incomplet');
+			const stateLabel = rowHasRajout ? 'Rajouté' : (allVisibleReady ? '-' : '-');
 			return `
 				<article class="result-card result-card--search ${stateClass}">
 					<div class="result-topline result-side">
@@ -1323,7 +1323,7 @@ function renderResults(rows, emptyMessage, isEmpty, mode, targetElement) {
 									${renderWeekdayCell('Planning', dayData.planning, 'Pas de planning')}
 									${renderWeekdayCell('Période', dayData.period, 'Jour / Nuit')}
 									${renderWeekdayCell('Choix', dayData.choice, 'Pas de choix')}
-									<div class="day-status ${(dayIsRajout ? 'is-rajout' : (ready ? 'is-ready' : 'is-missing'))} ${checked ? 'is-checked' : ''}">${checked ? 'Repas pris' : (dayIsRajout ? 'Rajouté' : (ready ? 'Compatible' : 'Incomplet'))}</div>
+									<div class="day-status ${(dayIsRajout ? 'is-rajout' : (ready ? 'is-ready' : 'is-missing'))} ${checked ? 'is-checked' : ''}">${checked ? 'Repas pris' : (dayIsRajout ? 'Rajouté' : (ready ? 'OK' : 'Incomplet'))}</div>
 								</div>
 							`;
 						}).join('')}
